@@ -41,3 +41,4 @@ void vrambuf_flush(void);
 void vrambuf_put(word addr, const char* str, byte len);
 
 #endif // vrambuf.h
+

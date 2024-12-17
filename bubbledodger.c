@@ -12,7 +12,7 @@
 #include <nes.h>
 
 // link the pattern table into CHR ROM
-//#link "chr_generic.s"
+//#link "chr_bubbledodger.s"
 
 // BCD arithmetic support
 #include "bcd.h"
@@ -21,6 +21,11 @@
 // VRAM update buffer
 #include "vrambuf.h"
 //#link "vrambuf.c"
+
+// APU sound library
+#include "apu.h"
+//#link "apu.c"
+
 
 /*{pal:"nes",layout:"nes"}*/
 const char PALETTE[32] = { 
@@ -33,7 +38,7 @@ const char PALETTE[32] = {
 
   0x16,0x35,0x24,0x00,	// sprite palette 0
   0x11,0x30,0x27,0x00,	// sprite palette 1
-  0x0D,0x2D,0x3A,0x00,	// sprite palette 2
+  0x00,0x2D,0x3D,0x00,	// sprite palette 2
   0x0D,0x27,0x2A	// sprite palette 3
 };
 
@@ -48,6 +53,10 @@ void setup_graphics() {
   // set nmi vram update
   vrambuf_flush();
   set_vram_update(updbuf);
+}
+
+byte rand_onscreen() {  
+  return rand()%(0xff-0x30)+0x10;
 }
 
 bool hitbox(
@@ -114,6 +123,8 @@ sbyte player1_vx = 0;
 byte player1_y = 0;
 sbyte player1_vy = 0;
 byte player1_lives = 0;
+// gameover animation frame counter
+byte player1_anim = 0;
 // invulnerability cooldown
 byte player1_inv = 0;
 // player 2 variables
@@ -122,6 +133,8 @@ sbyte player2_vx = 0;
 byte player2_y = 0;
 sbyte player2_vy = 0;
 byte player2_lives = 0;
+// gameover animation frame counter
+byte player2_anim = 0;
 // invulnerability cooldown
 byte player2_inv = 0;
 
@@ -130,6 +143,14 @@ byte player2_inv = 0;
 byte coins = 0;
 byte coin_x[MAX_COINS];
 byte coin_y[MAX_COINS];
+
+// spikes
+#define MAX_SPIKES 32
+byte spikes = 0;
+byte spike_x[MAX_SPIKES];
+byte spike_y[MAX_SPIKES];
+sbyte spike_vx[MAX_SPIKES];
+sbyte spike_vy[MAX_SPIKES];
 
 void main(void) {
   // next oam_id
@@ -198,10 +219,10 @@ void main(void) {
       } break;
       // transition
       case 1: {
-        if (counter>0) vrambuf_put(NTADR_A(1,counter-1), "                              ", 30);
-        if (counter<29) vrambuf_put(NTADR_A(1,counter), "________________________________", 30);
+        if (counter>0) vrambuf_put(NTADR_A(2,counter-1), "                            ", 28);
+        if (counter<29) vrambuf_put(NTADR_A(2,counter), "____________________________", 28);
         counter++;
-        if (counter == 29) {
+        if (counter == 30) {
           state = 2;
           counter = 0;
         }
@@ -210,26 +231,38 @@ void main(void) {
       case 2: {
       	// controllers
         // player 1
-        if (pad0&PAD_RIGHT) player1_vx = MOVE_SPEED;
-        if (pad0&PAD_LEFT) player1_vx = -MOVE_SPEED;
-        if (pad0&PAD_UP) player1_vy = -MOVE_SPEED;
-        if (pad0&PAD_DOWN) player1_vy = MOVE_SPEED;
+        if (pad0&PAD_RIGHT)
+          player1_vx = MOVE_SPEED;
+        if (pad0&PAD_LEFT)
+          player1_vx = -MOVE_SPEED;
+        if (pad0&PAD_UP)
+          player1_vy = -MOVE_SPEED;
+        if (pad0&PAD_DOWN)
+          player1_vy = MOVE_SPEED;
         // player 2
-        if (pad1&PAD_RIGHT) player2_vx = MOVE_SPEED;
-        if (pad1&PAD_LEFT) player2_vx = -MOVE_SPEED;
-        if (pad1&PAD_UP) player2_vy = -MOVE_SPEED;
-        if (pad1&PAD_DOWN) player2_vy = MOVE_SPEED;
+        if (pad1&PAD_RIGHT)
+          player2_vx = MOVE_SPEED;
+        if (pad1&PAD_LEFT)
+          player2_vx = -MOVE_SPEED;
+        if (pad1&PAD_UP)
+          player2_vy = -MOVE_SPEED;
+        if (pad1&PAD_DOWN)
+          player2_vy = MOVE_SPEED;
         // movement
         // player 1
         player1_x += player1_vx * MOVE_SCALE;
         player1_y += player1_vy * MOVE_SCALE;
-        if (player1_vx!=0) player1_vx += (player1_vx>0) ? -1 : 1;
-        if (player1_vy!=0) player1_vy += (player1_vy>0) ? -1 : 1;
+        if (player1_vx!=0)
+          player1_vx += (player1_vx>0) ? -1 : 1;
+        if (player1_vy!=0)
+          player1_vy += (player1_vy>0) ? -1 : 1;
         // player 2
         player2_x += player2_vx * MOVE_SCALE;
         player2_y += player2_vy * MOVE_SCALE;
-        if (player2_vx!=0) player2_vx += (player2_vx>0) ? -1 : 1;
-        if (player2_vy!=0) player2_vy += (player2_vy>0) ? -1 : 1;
+        if (player2_vx!=0)
+          player2_vx += (player2_vx>0) ? -1 : 1;
+        if (player2_vy!=0)
+          player2_vy += (player2_vy>0) ? -1 : 1;
         
         // process
         // collect coins
@@ -244,7 +277,7 @@ void main(void) {
               coin_x[i], coin_y[i], 8, 8)
           ) {
             // increment score (with bcd)
-            score = bcd_add(score, 0x100);
+            score = bcd_add(score, 0x15);
             // remove coin
             for (c=i+1; c<coins; c++) {
               coin_x[c-1] = coin_x[c];
@@ -256,24 +289,33 @@ void main(void) {
         }
         // place coins
         if (coins < MAX_COINS) {
-          coin_x[coins] = rand();
-          coin_y[coins] = rand();
+          coin_x[coins] = rand_onscreen();
+          coin_y[coins] = rand_onscreen();
           coins += 1;
         }
         // render
         // sprites
         // players
-        if (player1_lives > 0) oam_id = oam_spr(player1_x, player1_y, 0xaf, 0x00, oam_id);
-        if (playertwo && player2_lives > 0) oam_id = oam_spr(player2_x, player2_y, 0xae, 0x00, oam_id);
-        for (i=0; i<coins; i++) oam_id = oam_spr(coin_x[i], coin_y[i], 0xad, 0x01, oam_id);
+        if (playertwo) {
+          if (player1_lives > 0)
+            oam_id = oam_spr(player1_x, player1_y, 0xaf, 0x00, oam_id);
+          if (player2_lives > 0)
+            oam_id = oam_spr(player2_x, player2_y, 0xae, 0x00, oam_id);
+        }
+        else if (player1_lives > 0)
+          oam_id = oam_spr(player1_x, player1_y, 0xb0, 0x00, oam_id);
+        // coins
+        for (i=0; i<coins; i++)
+          oam_id = oam_spr(coin_x[i], coin_y[i], 0xad, 0x01, oam_id);
+        // spikes
+        for (i=0; i<spikes; i++)
+          oam_id = oam_spr(spike_x[i], spike_y[i], 0xa5, 0x02, oam_id);
         // tiles
         // lives
-        for (i=0; i<player1_lives; i++) {
+        for (i=0; i<player1_lives; i++)
           vrambuf_put(NTADR_A(2+i,2), "\x15", 1);
-        }
-        if (playertwo) for (i=0; i<player2_lives; i++) {
+        if (playertwo) for (i=0; i<player2_lives; i++)
           vrambuf_put(NTADR_A(29-i,2), "\x15", 1);
-        }
         // score
         draw_number(NTADR_A(14,2), score);
       } break;
@@ -286,3 +328,4 @@ void main(void) {
     ppu_wait_nmi();
   }
 }
+

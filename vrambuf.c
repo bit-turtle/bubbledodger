@@ -47,3 +47,4 @@ void vrambuf_put(word addr, register const char* str, byte len) {
   // place EOF mark
   vrambuf_end();
 }
+
