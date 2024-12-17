@@ -112,6 +112,8 @@ void draw_number(word addr, word number) {
 // true max speed = MOVE_SPEED * MOVE_SCALE
 #define MOVE_SPEED 2
 #define MOVE_SCALE 4
+// delay between hearts lost
+#define DAMAGE_DELAY 120
 
 // game variables
 byte playertwo = false;
@@ -123,20 +125,16 @@ sbyte player1_vx = 0;
 byte player1_y = 0;
 sbyte player1_vy = 0;
 byte player1_lives = 0;
-// gameover animation frame counter
-byte player1_anim = 0;
-// invulnerability cooldown
-byte player1_inv = 0;
+// invulnerability cooldown / gameover animation counter
+byte player1_timer = 0;
 // player 2 variables
 byte player2_x = 0;
 sbyte player2_vx = 0;
 byte player2_y = 0;
 sbyte player2_vy = 0;
 byte player2_lives = 0;
-// gameover animation frame counter
-byte player2_anim = 0;
-// invulnerability cooldown
-byte player2_inv = 0;
+// invulnerability cooldown / gameover animation counter
+byte player2_timer = 0;
 
 // coins
 #define MAX_COINS 4
@@ -146,11 +144,47 @@ byte coin_y[MAX_COINS];
 
 // spikes
 #define MAX_SPIKES 32
+// next spike
+byte next_spike_x = 0;
+byte next_spike_y = 0;
+// time till next spike is created
+#define NEXT_SPIKE_TIME 60
+#define NEXT_SPIKE_SCALE 240
+byte next_spike_time = 0;
+// current spikes
 byte spikes = 0;
 byte spike_x[MAX_SPIKES];
 byte spike_y[MAX_SPIKES];
 sbyte spike_vx[MAX_SPIKES];
 sbyte spike_vy[MAX_SPIKES];
+
+sbyte rand_speed() {
+  return 0;
+};
+
+// particles
+#define MAX_PARTICLES 16
+byte particles = 0;
+byte particle_x[MAX_PARTICLES];
+byte particle_y[MAX_PARTICLES];
+// particle charater rom index
+byte particle_c[MAX_PARTICLES];
+// particle sprite pallete
+byte particle_p[MAX_PARTICLES];
+// particle deletion timer
+byte particle_t[MAX_PARTICLES];
+
+void new_particle(byte x, byte y, byte c, byte p, byte t) {
+  // index is next particle unless full, then index is 0
+  byte index = (particles < MAX_PARTICLES) ? particles : 0;
+  particle_x[particles] = x;
+  particle_y[particles] = y;
+  particle_c[particles] = c;
+  particle_p[particles] = p;
+  particle_t[particles] = t;
+  // increment next particle index if not full
+  if (particles < MAX_PARTICLES) particles += 1;
+}
 
 void main(void) {
   // next oam_id
@@ -164,6 +198,7 @@ void main(void) {
   byte state = 0;
   byte counter = 0;
   byte i, c;
+  byte cache;
   // set up graphics
   setup_graphics();
   // game loop
@@ -248,6 +283,7 @@ void main(void) {
           player2_vy = -MOVE_SPEED;
         if (pad1&PAD_DOWN)
           player2_vy = MOVE_SPEED;
+        
         // movement
         // player 1
         player1_x += player1_vx * MOVE_SCALE;
@@ -265,6 +301,12 @@ void main(void) {
           player2_vy += (player2_vy>0) ? -1 : 1;
         
         // process
+        // counter
+        counter += 1;
+        if (player1_timer > 0) player1_timer -= 1;
+        if (player2_timer > 0) player2_timer -= 1;
+        // time score
+        if (counter%64 == 0) score = bcd_add(score, 0x1);
         // collect coins
         for (i=0; i<coins; i++) {
           if (
@@ -278,13 +320,14 @@ void main(void) {
           ) {
             // increment score (with bcd)
             score = bcd_add(score, 0x15);
+            new_particle(coin_x[i], coin_y[i], 0xa8, 0x00, 16);
             // remove coin
             for (c=i+1; c<coins; c++) {
               coin_x[c-1] = coin_x[c];
               coin_y[c-1] = coin_y[c];
             }
             coins -= 1;
-            i--;
+            i -= 1;
           }
         }
         // place coins
@@ -293,8 +336,61 @@ void main(void) {
           coin_y[coins] = rand_onscreen();
           coins += 1;
         }
+        // spikes
+        for (i=0; i<spikes; i++) {
+          // update spike positions
+          spike_x[i] += spike_vx[i];
+          spike_y[i] += spike_vy[i];
+          // spike damage
+          // player 1
+          if (
+            player1_lives > 0 && player1_timer == 0 &&
+            hitbox(
+              player1_x, player1_y, 8, 8,
+              spike_x[i], spike_y[i], 8, 8
+            )
+          ) {
+            player1_lives -= 1;
+            player1_timer = DAMAGE_DELAY;
+          }
+          // player 2
+          if (
+            playertwo && player2_lives > 0 && player2_timer == 0 &&
+            hitbox(
+              player2_x, player2_y, 8, 8,
+              spike_x[i], spike_y[i], 8, 8
+            )
+          ) {
+            player2_lives -= 1;
+            player2_timer = DAMAGE_DELAY;
+          }
+        }
+        // create spikes
+        if (next_spike_time == 0 && spikes < MAX_SPIKES) {
+          // place spike
+          spike_x[spikes] = next_spike_x;
+          spike_y[spikes] = next_spike_y;
+          spike_vx[spikes] = rand_speed();
+          spike_vy[spikes] = rand_speed();
+          spikes += 1;
+          // prepare next spike
+          next_spike_x = rand_onscreen();
+          next_spike_y = rand_onscreen();
+          new_particle(next_spike_x, next_spike_y, 0xa7, 0x00, NEXT_SPIKE_TIME);
+          next_spike_time = NEXT_SPIKE_TIME;
+        }
+        else
+          next_spike_time -= 1;
+        
         // render
         // sprites
+        // coins
+        for (i=0; i<coins; i++)
+          oam_id = oam_spr(coin_x[i], coin_y[i], 0xad, 0x01, oam_id);
+        // spikes 4 frames per texture animation
+        cache = 0xa9+counter/4%4;
+        for (i=0; i<spikes; i++)
+          oam_id = oam_spr(spike_x[i], spike_y[i], cache, 0x02, oam_id);
         // players
         if (playertwo) {
           if (player1_lives > 0)
@@ -304,24 +400,62 @@ void main(void) {
         }
         else if (player1_lives > 0)
           oam_id = oam_spr(player1_x, player1_y, 0xb0, 0x00, oam_id);
-        // coins
-        for (i=0; i<coins; i++)
-          oam_id = oam_spr(coin_x[i], coin_y[i], 0xad, 0x01, oam_id);
-        // spikes
-        for (i=0; i<spikes; i++)
-          oam_id = oam_spr(spike_x[i], spike_y[i], 0xa5, 0x02, oam_id);
         // tiles
         // lives
+        // player 1
+        vrambuf_put(NTADR_A(2,2), "   ", 3);
         for (i=0; i<player1_lives; i++)
           vrambuf_put(NTADR_A(2+i,2), "\x15", 1);
+        // player 2
+        vrambuf_put(NTADR_A(26, 2), "   ", 3);
         if (playertwo) for (i=0; i<player2_lives; i++)
           vrambuf_put(NTADR_A(29-i,2), "\x15", 1);
         // score
         draw_number(NTADR_A(14,2), score);
+        
+        // gameover
+        if (
+          !playertwo && player1_lives == 0 ||
+          playertwo && player1_lives == 0 && player2_lives == 0
+        ) {
+          // go to gameover screen
+          state = 3;
+          // clear vram
+          vrambuf_put(NTADR_A(2,2), "                             ", 29);
+          // remove particles
+          particles = 0;
+        }
+      } break;
+      // gameover screen
+      case 3: {
+        vrambuf_put(NTADR_A(10,10), "GAME OVER", 9);
+        vrambuf_put(NTADR_A(6, 12), "FINAL SCORE: ", 13);
+        draw_number(NTADR_A(19, 12), score);
       } break;
       // error catch
       default: state = 0;
     }
+    // particles
+    // remove particles once timer over;
+    for (i=0; i<particles; i++) {
+      // update particle timer
+      if (particle_t[i] > 0) particle_t[i] -= 1;
+      if (particle_t[i] == 0) {
+        // delete particle
+        for (c=i+1; c<particles; c++) {
+          particle_x[c-1] = particle_x[c];
+          particle_y[c-1] = particle_y[c];
+          particle_c[c-1] = particle_c[c];
+          particle_p[c-1] = particle_p[c];
+          particle_t[c-1] = particle_t[c];
+        }
+        particles -= 1;
+        i -= 1;
+      }
+    }
+    // render particles
+    for (i=0; i<particles; i++)
+      oam_id = oam_spr(particle_x[i], particle_y[i], particle_c[i], particle_p[i], oam_id);
     // hide unused sprites
     oam_hide_rest(oam_id);
     // wait for next frame
