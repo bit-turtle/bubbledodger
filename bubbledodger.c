@@ -114,12 +114,20 @@ void draw_number(word addr, word number) {
 #define MOVE_SCALE 4
 // delay between hearts lost
 #define DAMAGE_DELAY 120
+// time until gameover screen
+#define GAMEOVER_TIME 120
 
 // game variables
 byte playertwo = false;
+// game timer (incremented every 256 frames)
+byte time = 0;
 // bcd coded shared score
 word score = 0x0000;
 // player variables
+// frames per stage of gameover animation
+#define GAMEOVER_ANIM 8
+// blink rate of damage animation
+#define DAMAGE_BLINK 3
 byte player1_x = 0;
 sbyte player1_vx = 0;
 byte player1_y = 0;
@@ -148,8 +156,14 @@ byte coin_y[MAX_COINS];
 byte next_spike_x = 0;
 byte next_spike_y = 0;
 // time till next spike is created
-#define NEXT_SPIKE_TIME 60
-#define NEXT_SPIKE_SCALE 240
+#define NEXT_SPIKE_TIME 240
+// how much less time every 256 frames
+#define NEXT_SPIKE_SCALE 1
+// speed
+// inital speed
+#define SPIKE_SPEED 1
+// speed increase by 1 by (256 frames / scale)
+#define SPIKE_SCALE 4
 byte next_spike_time = 0;
 // current spikes
 byte spikes = 0;
@@ -159,7 +173,7 @@ sbyte spike_vx[MAX_SPIKES];
 sbyte spike_vy[MAX_SPIKES];
 
 sbyte rand_speed() {
-  return 0;
+  return rand()%(SPIKE_SPEED+time/SPIKE_SCALE)-(SPIKE_SPEED+time/SPIKE_SCALE)/2;
 };
 
 // particles
@@ -234,6 +248,9 @@ void main(void) {
           player2_x = 128;
           player2_y = 128;
           coins = 0;
+          spikes = 0;
+          particles = 0;
+          time = 0;
           score = 0;
         }
         // draw screen
@@ -303,6 +320,15 @@ void main(void) {
         // process
         // counter
         counter += 1;
+        // time score if still alive
+        if (
+          counter == 0xff &&
+          (
+            player1_lives > 0 ||
+            playertwo && player2_lives > 0
+          )
+        ) time += 1;
+        // player timers
         if (player1_timer > 0) player1_timer -= 1;
         if (player2_timer > 0) player2_timer -= 1;
         // time score
@@ -351,7 +377,8 @@ void main(void) {
             )
           ) {
             player1_lives -= 1;
-            player1_timer = DAMAGE_DELAY;
+            player1_timer = (player1_lives > 0) ? DAMAGE_DELAY : GAMEOVER_ANIM*4;
+            counter = 0;
           }
           // player 2
           if (
@@ -362,7 +389,8 @@ void main(void) {
             )
           ) {
             player2_lives -= 1;
-            player2_timer = DAMAGE_DELAY;
+            player2_timer = (player2_lives > 0) ? DAMAGE_DELAY : GAMEOVER_ANIM*4;
+            counter = 0;
           }
         }
         // create spikes
@@ -377,7 +405,7 @@ void main(void) {
           next_spike_x = rand_onscreen();
           next_spike_y = rand_onscreen();
           new_particle(next_spike_x, next_spike_y, 0xa7, 0x00, NEXT_SPIKE_TIME);
-          next_spike_time = NEXT_SPIKE_TIME;
+          next_spike_time = NEXT_SPIKE_TIME-time*NEXT_SPIKE_SCALE;
         }
         else
           next_spike_time -= 1;
@@ -393,31 +421,42 @@ void main(void) {
           oam_id = oam_spr(spike_x[i], spike_y[i], cache, 0x02, oam_id);
         // players
         if (playertwo) {
-          if (player1_lives > 0)
+          if (player1_lives > 0 && player1_timer/DAMAGE_BLINK%2 == 0)
             oam_id = oam_spr(player1_x, player1_y, 0xaf, 0x00, oam_id);
-          if (player2_lives > 0)
+          if (player2_lives > 0 && player2_timer/DAMAGE_BLINK%2 == 0)
             oam_id = oam_spr(player2_x, player2_y, 0xae, 0x00, oam_id);
         }
-        else if (player1_lives > 0)
+        else if (player1_lives > 0 && player1_timer/DAMAGE_BLINK%2 == 0)
           oam_id = oam_spr(player1_x, player1_y, 0xb0, 0x00, oam_id);
+        // gameover players
+        if (player1_lives == 0 && player1_timer > 0)
+          oam_id = oam_spr(player1_x, player1_y, 0xb1+player1_timer/GAMEOVER_ANIM, 0x00, oam_id);
+        if (playertwo && player2_lives == 0 && player2_timer > 0)
+          oam_id = oam_spr(player2_x, player2_y, 0xb1+player2_timer/GAMEOVER_ANIM, 0x00, oam_id);
         // tiles
         // lives
         // player 1
         vrambuf_put(NTADR_A(2,2), "   ", 3);
         for (i=0; i<player1_lives; i++)
           vrambuf_put(NTADR_A(2+i,2), "\x15", 1);
+        if (player1_lives == 0)
+          vrambuf_put(NTADR_A(2,2), "GAMEOVER", 8);
         // player 2
         vrambuf_put(NTADR_A(26, 2), "   ", 3);
         if (playertwo) for (i=0; i<player2_lives; i++)
           vrambuf_put(NTADR_A(29-i,2), "\x15", 1);
+        if (playertwo && player2_lives == 0)
+          vrambuf_put(NTADR_A(21,2), "GAMEOVER", 8);
         // score
         draw_number(NTADR_A(14,2), score);
         
         // gameover
-        if (
-          !playertwo && player1_lives == 0 ||
-          playertwo && player1_lives == 0 && player2_lives == 0
-        ) {
+        if ( counter == GAMEOVER_TIME &&
+            (
+              !playertwo && player1_lives == 0 ||
+              playertwo && player1_lives == 0 && player2_lives == 0
+            )
+          ) {
           // go to gameover screen
           state = 3;
           // clear vram
@@ -431,6 +470,34 @@ void main(void) {
         vrambuf_put(NTADR_A(10,10), "GAME OVER", 9);
         vrambuf_put(NTADR_A(6, 12), "FINAL SCORE: ", 13);
         draw_number(NTADR_A(19, 12), score);
+        if (score > 0x9000)
+          vrambuf_put(NTADR_A(5, 15), "AMAZING!!!!", 11);
+        else if (score > 0x5000)
+          vrambuf_put(NTADR_A(5, 15), "WOW!!!", 6);
+        else if (score > 0x2000)
+          vrambuf_put(NTADR_A(5,15), "GREAT SCORE!", 12);
+        else if (score > 0x1000)
+          vrambuf_put(NTADR_A(5, 15), "NOT BAD!", 8);
+        else if (score > 0x0500)
+          vrambuf_put(NTADR_A(5,15), "CAN YOU DO BETTER?", 18);
+        else
+          vrambuf_put(NTADR_A(5,15), "TRY DODGING...", 14);
+        vrambuf_put(NTADR_A(3, 18), "PRESS START TO CONTINUE", 23);
+        if (trg0&PAD_START) {
+          // transition
+          state = 4;
+          counter = 0;
+        }
+      } break;
+      // transition
+      case 4: {
+        if (counter>0) vrambuf_put(NTADR_A(2,29-counter+1), "                            ", 28);
+        if (counter<29) vrambuf_put(NTADR_A(2,29-counter), "____________________________", 28);
+        counter++;
+        if (counter == 30) {
+          state = 0;
+          counter = 0;
+        }
       } break;
       // error catch
       default: state = 0;
