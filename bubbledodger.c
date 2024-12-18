@@ -163,7 +163,7 @@ byte next_spike_y = 0;
 // inital speed
 #define SPIKE_SPEED 1
 // speed increase by 1 by (256 frames / scale)
-#define SPIKE_SCALE 4
+#define SPIKE_SCALE 2
 byte next_spike_time = 0;
 // current spikes
 byte spikes = 0;
@@ -252,6 +252,10 @@ void main(void) {
           particles = 0;
           time = 0;
           score = 0;
+          // prepare first spike
+          next_spike_x = rand_onscreen();
+          next_spike_y = rand_onscreen();
+          next_spike_time = NEXT_SPIKE_TIME;
         }
         // draw screen
         vrambuf_put(NTADR_A(2,2), "THE BUBBLEDODGER GAME!", 22);
@@ -277,6 +281,8 @@ void main(void) {
         if (counter == 30) {
           state = 2;
           counter = 0;
+          // show first spike warning
+          new_particle(next_spike_x, next_spike_y, 0xa7, 0x00, next_spike_time);
         }
       } break;
       // game
@@ -404,7 +410,7 @@ void main(void) {
           // prepare next spike
           next_spike_x = rand_onscreen();
           next_spike_y = rand_onscreen();
-          new_particle(next_spike_x, next_spike_y, 0xa7, 0x00, NEXT_SPIKE_TIME);
+          new_particle(next_spike_x, next_spike_y, 0xa7, 0x00, NEXT_SPIKE_TIME-time*NEXT_SPIKE_SCALE);
           next_spike_time = NEXT_SPIKE_TIME-time*NEXT_SPIKE_SCALE;
         }
         else
@@ -446,7 +452,7 @@ void main(void) {
         if (playertwo) for (i=0; i<player2_lives; i++)
           vrambuf_put(NTADR_A(29-i,2), "\x15", 1);
         if (playertwo && player2_lives == 0)
-          vrambuf_put(NTADR_A(21,2), "GAMEOVER", 8);
+          vrambuf_put(NTADR_A(22,2), "GAMEOVER", 8);
         // score
         draw_number(NTADR_A(14,2), score);
         
