@@ -1,4 +1,3 @@
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +25,9 @@
 #include "apu.h"
 //#link "apu.c"
 
+void sound_effect() {
+  
+}
 
 /*{pal:"nes",layout:"nes"}*/
 const char PALETTE[32] = { 
@@ -109,9 +111,11 @@ void draw_number(word addr, word number) {
   vrambuf_put(addr+3, get_digit( (number&0x000f)>>0 ), 1);
 }
 
-// true max speed = MOVE_SPEED * MOVE_SCALE
-#define MOVE_SPEED 2
-#define MOVE_SCALE 4
+// max speed
+// frames till speed slows to 0 (1 is minimum value)
+#define MOVE_SPEED 1
+// speed multiples by this
+#define MOVE_SCALE 6
 // delay between hearts lost
 #define DAMAGE_DELAY 120
 // time until gameover screen
@@ -309,15 +313,19 @@ void main(void) {
         
         // movement
         // player 1
-        player1_x += player1_vx * MOVE_SCALE;
-        player1_y += player1_vy * MOVE_SCALE;
+        if (player1_lives > 0) {
+          player1_x += player1_vx * MOVE_SCALE;
+          player1_y += player1_vy * MOVE_SCALE;
+        }
         if (player1_vx!=0)
           player1_vx += (player1_vx>0) ? -1 : 1;
         if (player1_vy!=0)
           player1_vy += (player1_vy>0) ? -1 : 1;
         // player 2
-        player2_x += player2_vx * MOVE_SCALE;
-        player2_y += player2_vy * MOVE_SCALE;
+        if (player2_lives > 0) {
+          player2_x += player2_vx * MOVE_SCALE;
+          player2_y += player2_vy * MOVE_SCALE;
+        }
         if (player2_vx!=0)
           player2_vx += (player2_vx>0) ? -1 : 1;
         if (player2_vy!=0)
