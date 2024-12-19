@@ -25,10 +25,6 @@
 #include "apu.h"
 //#link "apu.c"
 
-void sound_effect() {
-  
-}
-
 /*{pal:"nes",layout:"nes"}*/
 const char PALETTE[32] = { 
   0x03,			// screen color
@@ -204,6 +200,15 @@ void new_particle(byte x, byte y, byte c, byte p, byte t) {
   if (particles < MAX_PARTICLES) particles += 1;
 }
 
+// audio
+void setup_audio() {
+  APU_ENABLE(0x0f);
+}
+void powerup_sound() {
+  APU_PULSE_DECAY(0, 687, 128, 6, 4);
+  APU_PULSE_SWEEP(0, 4, 2, 1);
+}
+
 void main(void) {
   // next oam_id
   byte oam_id = 0;
@@ -219,6 +224,8 @@ void main(void) {
   byte cache;
   // set up graphics
   setup_graphics();
+  // set up audio
+  setup_audio();
   // game loop
   while(1) {
     // get controller state
@@ -358,6 +365,8 @@ void main(void) {
               player2_x, player2_y, 8, 8,
               coin_x[i], coin_y[i], 8, 8)
           ) {
+            // sound effect
+            powerup_sound();
             // increment score (with bcd)
             score = bcd_add(score, 0x15);
             new_particle(coin_x[i], coin_y[i], 0xa8, 0x00, 16);
