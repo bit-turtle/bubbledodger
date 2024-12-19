@@ -25,6 +25,35 @@
 #include "apu.h"
 //#link "apu.c"
 
+// audio
+void setup_audio() {
+  APU_ENABLE(0x0f);
+}
+void powerup_sound() {
+  APU_PULSE_DECAY(0, 687, 128, 6, 4);
+  APU_PULSE_SWEEP(0, 4, 2, 1);
+}
+const word note_table[64] = {
+  4318, 4076, 3847, 3631, 3427, 3235, 3053, 2882, 2720, 2567, 2423, 2287, 2159, 2037, 1923, 1815, 1713, 1617, 1526, 1440, 1360, 1283, 1211, 1143, 1079, 1018, 961, 907, 856, 808, 763, 720, 679, 641, 605, 571, 539, 509, 480, 453, 428, 403, 381, 359, 339, 320, 302, 285, 269, 254, 240, 226, 213, 201, 190, 179, 169, 160, 151, 142, 134, 126, 119, 113,
+};
+void play_note(byte note) {
+  if (note == 0) return;
+  APU_PULSE_DECAY(1, note_table[note], DUTY_25, 2, 10);
+  APU_PULSE_SWEEP(1, 0, 0, 0);
+}
+const byte music[];	// music at end of file
+const byte* note = music;
+byte music_time = 0;
+void play_music() {
+  music_time += 1;
+  if (music_time == *(note+1)) {
+    note+=2;
+    music_time = 0;
+  }
+  if (*note == 0xff) note = music;
+  play_note(*note);
+}
+
 /*{pal:"nes",layout:"nes"}*/
 const char PALETTE[32] = { 
   0x03,			// screen color
@@ -200,13 +229,9 @@ void new_particle(byte x, byte y, byte c, byte p, byte t) {
   if (particles < MAX_PARTICLES) particles += 1;
 }
 
-// audio
-void setup_audio() {
-  APU_ENABLE(0x0f);
-}
-void powerup_sound() {
-  APU_PULSE_DECAY(0, 687, 128, 6, 4);
-  APU_PULSE_SWEEP(0, 4, 2, 1);
+// NMI IRQ0 callback
+void nmi_callback() {
+  play_music();
 }
 
 void main(void) {
@@ -226,6 +251,8 @@ void main(void) {
   setup_graphics();
   // set up audio
   setup_audio();
+  // set up NMI
+  nmi_set_callback(nmi_callback);
   // game loop
   while(1) {
     // get controller state
@@ -553,3 +580,40 @@ void main(void) {
   }
 }
 
+const byte music[] = {
+// n, length
+  40, 10,
+  45, 10,
+  47, 10,
+  50, 10,
+  40, 10,
+  45, 10,
+  47, 10,
+  50, 10,
+  36, 10,
+  40, 10,
+  43, 10,
+  47, 10,
+  36, 10,
+  40, 10,
+  43, 10,
+  47, 10,
+  40, 10,
+  43, 10,
+  45, 10,
+  48, 10,
+  40, 10,
+  43, 10,
+  45, 10,
+  48, 10,
+  39, 10,
+  42, 10,
+  45, 10,
+  47, 10,
+  39, 10,
+  42, 10,
+  45, 10,
+  47, 10,
+  
+  0xff	// End of score
+};
